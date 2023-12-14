@@ -6,18 +6,36 @@ output: html_document
 editor_options: 
   chunk_output_type: console
 ---
+## Introduction
 
-This is my final project for the Statistical Programming PhD course at ELTE. I am going to explore the dataset on the US House of Representatives election results.
+This is my final project for the Statistical Programming PhD course at ELTE. I am going to explore the dataset of the U.S. House of Representatives election results. I chose this dataset because I'm interested in American politics, so I think that this project will also be a great opportunity for me to learn more about this topic.
+
+The U.S. House of Representatives is the lower chamber of Congress, comprising 435 members representing districts across the nation. Its members are elected every two years, with each state allocated seats based on population size.
+
+## Preparing for the analyses
+
+First, I am loading the necessary packages and disabling scientific notation (I like to see the full numbers in the dataset).
 
 ```{r setup, results='hide', message=FALSE}
-# Loading the necessary packages and disabling scientific notation
+# Loading the necessary packages 
 library(tidyverse)
 library(tidytuesdayR)
+library(jtools)
+library(broom)
+library(olsrr)
+library(ggfortify)
+library(lmtest)
 
+# Disabling scientific notation
 options(scipen = 999) 
+
+# Setting the width of the plots
+knitr::opts_chunk$set(fig.width = 10) 
 ```
 
-# Getting the data
+## Getting the data
+
+At this step, I am doing data reading from the TidyTuesday GitHub repo, using the tidytuesdayR package.
 
 ```{r}
 tuesdata <- tt_load('2023-11-07')
@@ -25,7 +43,9 @@ house_data <- tuesdata$house
 
 ```
 
-# Exploratory data analysis
+## Exploratory data analysis
+
+At this step, I am going to explore the dataset and create some plots.
 
 ```{r}
 # Checking the structure of the data
@@ -36,49 +56,74 @@ head(house_data)
 
 # Checking the last rows of the data
 tail(house_data)
+```
 
-# So far, I can see that this dataset has the US House election results from 1976 to 2022 for each state. 
+So far, I can see that this dataset has the US House election results from 1976 to 2022 for each state.
 
+```{r}
 # Checking the number of missing values in each column
 colSums(is.na(house_data))
-# There are no missing values in the dataset.
+```
 
+There are some missing values in the runoff and party coloumns. I don't think that I will use the runoff coloumn later, but the missing values in the party coloumn could be a problem. I will look into this.
+
+```{r}
 # Checking the number of political parties in the elections. Sorting the parties by the number of elections they participated in.
 house_data %>% 
   count(party, sort = TRUE)
-# It's really interesting to see that there are 478 parties that participated in the elections, while there are only 2 major parties in the US (Democratic and Republican). For simplicity, I will only focus on these two parties. 
+```
 
+It's really interesting to see that there are 478 parties that participated in the elections, while there are only 2 major parties in the US (Democratic and Republican). For simplicity, I will only focus on these two parties. Filtering will also solve the problem of missing values in the party coloumn.
+
+```{r}
 # Removing the parties that are not Democratic or Republican
 house_data_cleaned <- house_data %>% 
   filter(party == "DEMOCRAT" | party == "REPUBLICAN")
+```
 
+## Exploratory data analysis plotting
+
+### Plotting the percentage of votes by year and party
+
+```{r}
 # Adding a new column that shows the percentage of votes for each candidate and removing the all uppercase format from the party names
 house_data_cleaned <- house_data_cleaned %>% 
   mutate(percent_of_votes = (candidatevotes / totalvotes) * 100) %>%
    mutate(party = str_to_title(tolower(party)))
 
-# Plotting the percentage of votes by year and party
+# Plotting the percentage of votes by year and party. I am setting the color of the points and the lines manually, because I want the 2 parties to have their traditional colors.
 house_data_cleaned %>% 
-  ggplot(aes(x = year, y = percent_of_votes, color = party)) +
-  geom_point() +
+  ggplot() +
+  aes(x = year, y = percent_of_votes, color = party) +
+  geom_point(alpha = 0.5) +
   geom_smooth(method = "lm", se = FALSE) +
-    scale_color_manual(values = c("Democrat" = "blue", "Republican" = "red")) +
+  scale_color_manual(values = c("Democrat" = "blue", "Republican" = "red")) +
   labs(title = "Percentage of votes by year and party",
        x = "Year",
        y = "Percentage of votes",
        color = "Party",
        caption = "Each point represents the result of a candidate in the given year.") +
+  scale_x_continuous(
+    breaks = unique(house_data_cleaned$year),
+    labels = function(x) substring(x, nchar(x) - 1)
+  ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.title = element_text(face = "bold"),
     plot.caption = element_text(hjust = 0.5))
-# It's interesting to see that the percentage of votes for the Democratic party has been decreasing since 1976, while the percentage of votes for the Republican party has been increasing since then. In any case, the results of the two parties' candidates are generally quite close.
+```
 
+It's interesting to see that the percentage of votes for the Democratic party's candidates has been decreasing since 1976, while the percentage of votes for the Republican party has been increasing since then. However, this result might be misleading when compared to actual election outcomes. In any case, the results of the two parties' candidates are generally quite close.
+
+### Plotting the number of votes by year and party
+
+```{r}
 # Plotting the number of votes by year and party on a line plot
 house_data_cleaned %>% 
   group_by(year, party) %>% 
   summarise(total_votes = sum(candidatevotes)) %>%
-  ggplot(aes(x = year, y = total_votes, color = party)) +
+  ggplot() +
+  aes(x = year, y = total_votes, color = party) +
   geom_line() +
   scale_color_manual(values = c("Democrat" = "blue", "Republican" = "red")) +
   labs(title = "Number of votes by year and party",
@@ -86,18 +131,22 @@ house_data_cleaned %>%
        y = "Number of votes",
        color = "Party") +
   scale_x_continuous(
-    breaks = unique(people$year),
+    breaks = unique(house_data_cleaned$year),
     labels = function(x) substring(x, nchar(x) - 1)
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.title = element_text(face = "bold"),
     plot.caption = element_text(hjust = 0.5)
   )
+```
 
-# It's interesting to see how much voter turnout varies the years. I think that big variation could be caused by the fact that the US House elections are held every two years, and the turnout is could be higher, when the presidential election is also happening in the same year. I will look into this.
+It's interesting to see how much voter turnout varies the years. I think that big variation could be caused by the fact that the US House elections are held every two years, and the turnout is could be higher, when the presidential election is also happening in the same year. I will look into this.
 
-# Adding a new coloumn that shows if the particular year was a midterm or presidential election year in the US. I checked the years on Wikipedia.
+### Plotting the number of votes by year and election type
+
+```{r}
+# Adding a new coloumn that shows if the particular year was a midterm or presidential election year in the US. I checked the years on Wikipedia and U.S. presidential election years are divisible by 4 while while midterm election years are not (at least this is true between 1974 and 2022).
 house_data_cleaned <- house_data_cleaned %>% 
   mutate(election_type = ifelse(year %% 4 == 0, "Presidential", "Midterm"))
 
@@ -105,7 +154,8 @@ house_data_cleaned <- house_data_cleaned %>%
 house_data_cleaned %>% 
   group_by(year, election_type) %>% 
   summarise(total_votes = sum(candidatevotes)) %>%
-  ggplot(aes(x = year, y = total_votes, color = election_type)) +
+  ggplot() +
+  aes(x = year, y = total_votes, color = election_type) +
   geom_line() +
   geom_point() +
   labs(title = "Number of votes by year and election type",
@@ -113,14 +163,184 @@ house_data_cleaned %>%
        y = "Number of votes",
        color = "Election type") +
   scale_x_continuous(
-    breaks = unique(people$year),
+    breaks = unique(house_data_cleaned$year),
     labels = function(x) substring(x, nchar(x) - 1)
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.title = element_text(face = "bold"),
     plot.caption = element_text(hjust = 0.5)
   )
+```
+
+The number of votes definitely seems to be higher in presidential election years.
+
+### Plotting the number of wins by year and party
+
+```{r}
+# Adding a coloumn that shows if the candidate won the election or not. This code might not be 100% accurate, but I hope it shows the general trend.
+house_data_cleaned <- house_data_cleaned %>% 
+  mutate(won = ifelse(candidatevotes > totalvotes / 2, TRUE, FALSE))
+
+# Plotting the number of wins by year and party on a line plot
+house_data_cleaned %>% 
+  group_by(year, party) %>% 
+  summarise(total_wins = sum(won)) %>%
+  ggplot() +
+  aes(x = year, y = total_wins, color = party) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(values = c("Democrat" = "blue", "Republican" = "red")) +
+  labs(title = "Number of wins by year and party",
+       x = "Year",
+       y = "Number of wins",
+       color = "Party") +
+  scale_x_continuous(
+    breaks = unique(house_data_cleaned$year),
+    labels = function(x) substring(x, nchar(x) - 1)
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    plot.caption = element_text(hjust = 0.5)
+  )
+```
+
+From this plot it is interesting to see that the race for majority in the House of Representatives has been getting closer since 1976.
+
+# Hypothesis testing
+
+## Buildig the models
+
+I would like to statistically test two hypotheses: the USA is often divided in the news to traditionally more conservative and to more progressive states. I will build two linear regression models, one for each group of states, and then compare their results. I will use the percentage of votes as the dependent variable and the party and the year as the independent variables. I hypothesize there will be differences between the two models if we will look at the predictors.
+![](https://www.dictionary.com/e/wp-content/uploads/2020/08/20200827_redBlueStates_1000x700-790x310.png)
+
+```{r}
+# Creating a subset of the data that has traditionally more conservative states: Alaska, Maine, West Virginia and Mississippi; then converting the party coloumn to a factor
+house_data_cleaned_conservative <- house_data_cleaned %>% 
+  filter(state_po %in% c("AL", "IN", "TE", "SD")) %>%
+  mutate(party = as.factor(party))
+
+# Creating a subset of the data that has traditionally more progressive states: California, New York, Illinois and New Jersey; then converting the party coloumn to a factor
+house_data_cleaned_progressive <- house_data_cleaned %>% 
+  filter(state_po %in% c("CA", "NY", "IL", "NJ")) %>% 
+  mutate(party = as.factor(party))
+
+# Building a linear model for the conservative states
+model_conservative <- lm(percent_of_votes ~ party + year, data = house_data_cleaned_conservative)
+
+# Building a linear model for the progressive states
+model_progressive <- lm(percent_of_votes ~ party + year, data = house_data_cleaned_progressive)
 
 ```
 
+## Checking the assumptions of the models
+
+I will check the models to see if the assumptions of linear regression (normality of the residuals, linearity of the relationships, homogeneity of variance/homoscedasticity, multicollinearity) hold true. I will also check the models for influential outliers.
+
+### Checking the assumptions of the model for more conservative states
+
+```{r}
+# Testing for linearity of the model
+raintest(model_conservative)
+```
+
+The p-value of the Rainbow test is 0.13, which is higher than 0.05, so we can assume that the linearity assumption is met.
+
+```{r}
+#Testing homoskedasticity
+ols_test_breusch_pagan(model_conservative)
+```
+
+The Breusch-Pagan test's p-value is higher than 0.05, so we can assume that the homoskedasticity assumption is met.
+
+```{r}
+#Testing for normality of residuals
+ols_plot_resid_qq(model_conservative)
+
+ols_plot_resid_hist(model_conservative)
+```
+
+Based on the QQ-plot and the histogram, the normality assumption is a bit questionable, but I will assume that it is met. If this was a real study, I would probably investigate further or use a non-parametric test instead.
+
+```{r}
+#Testing for multicollinearity
+ols_vif_tol(model_conservative)
+```
+
+The VIF and Tolerance values are really close to 1, so we can assume that the multicollinearity assumption is met.
+
+```{r}
+#Testing for outliars
+ols_plot_cooksd_chart(model_conservative)
+ols_plot_resid_stud(model_conservative)
+```
+
+Based on the studentized residuals plot, there are no specific outliars, but the Cook's distance plot shows that there are many influential points. However, this particular Cook's distance plot uses an extremely conservative treshold.
+
+### Checking the assumptions of the model for more progressive states
+
+```{r}
+# Testing for linearity of the model
+raintest(model_progressive)
+```
+
+The p-value of the Rainbow test is 0.9998, so we can assume that the linearity assumption is met.
+
+```{r}
+#Testing homoskedasticity
+ols_test_breusch_pagan(model_progressive)
+```
+
+The Breusch-Pagan test's p-value is higher than 0.05, so we can assume that the homoskedasticity assumption is met.
+
+```{r}
+#Testing for normality of residuals
+ols_plot_resid_qq(model_progressive)
+
+ols_plot_resid_hist(model_progressive)
+```
+
+As with the previous model, based on the QQ plot and histogram, the normality assumption for this model is somewhat questionable, but I will assume that it is met. If this were a real study, I would probably investigate further.
+
+```{r}
+#Testing for multicollinearity
+ols_vif_tol(model_progressive)
+```
+
+The VIF and Tolerance values are really close to 1, so we can assume that the multicollinearity assumption is met.
+
+```{r}
+#Testing for outliars
+ols_plot_cooksd_chart(model_progressive)
+ols_plot_resid_stud(model_progressive)
+```
+
+The results of the outlier testing are the same as for the previous model: based on the studentized residuals plot, there are no specific outliars, but the Cook's distance plot shows that there are many influential points. However, this particular Cook's distance plot uses an extremely conservative threshold.
+
+## Comparing the models
+
+```{r}
+#Results of the model for more conservative states
+summ(model_conservative, confint = TRUE)
+```
+
+The resulting model provided a significantly better prediction of the percentage of votes than the baseline model, F(2,789) = 4.81, p = 0.01, but the included independent variables explained only 1 percent of the variance in the dependent variable (adj. R-squared = 0.01). This suggests that the model does not capture a really big proportion of the variability in vote percentages in traditionally conservative states. Of the independent variables, only the party variable showed a significant relationship with the dependent variable, while year did not. The unstandardized coefficient of the partyRepublican variable was 4.13, indicating that the predicted percentage of votes for Republican Party candidates was 4.13 percentage points higher than the predicted percentage of votes for Democratic Party candidates.
+
+```{r}
+#Results of the model for more progressive states
+summ(model_progressive, confint = TRUE)
+```
+
+The resulting model provided a significantly better prediction of the percentage of votes than the baseline model, F(2,5297) = 347.64, p = 0.00, and the included independent variables explained 12 percent of the variance in the dependent variable (adj. R-squared = 0.12). This suggests that the model captures a significant proportion of the variability in turnout in traditionally progressive states, but there is still a lot of variance that is not yet captured. Of the independent variables, only the party variable showed a significant relationship with the dependent variable. The coefficient of the partyRepublican variable was -13.80, indicating that the predicted percentage of votes for Republican Party candidates was 13.80 percentage points lower than the predicted percentage of votes for Democratic Party candidates. Year did not show a significant relationship with the dependent variable.
+
+```{r}
+#Comparing the models
+export_summs(model_conservative, model_progressive, 
+             model.names = c("Conservative states", "Progressive states"),
+             error_format = "[{conf.low}, {conf.high}]")
+```
+
+We can conlude that our model for traditionally progressive states is a better predictor of the percentage of votes won than the model for traditionally conservative states. The model for progressive states explained 12 percent of the variance in the dependent variable, while the model for conservative states explained only 1 percent of the variance. It is interesting to note that the party variable was significant in both models, but the direction of the relationship was the opposite: in traditionally conservative states, the predicted percentage of votes for Republican Party candidates was 4.13 percentage points higher than the predicted percentage of votes for Democratic Party candidates; while in traditionally progressive states, the predicted percentage of votes for Republican Party candidates was 13.80 percentage points lower than the predicted percentage of votes for Democratic Party candidates. The year variable was not significant in either model.
+
+![](https://media.cnn.com/api/v1/images/stellar/prod/181105112842-donkey-elephant-top.jpg?q=w_2000,c_fill/f_webp)
